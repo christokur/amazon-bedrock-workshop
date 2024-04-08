@@ -1,12 +1,19 @@
 import json
+import os
 import boto3
 import random
 
-boto3_session = boto3.session.Session()
+profile_name = os.getenv("AWS_PROFILE", 'cloud-services-dev')
+print(f"{profile_name=}")
+region_name = 'us-west-2' # os.getenv("AWS_REGION", 'us-west-2')
+print(f"{region_name=}")
+
+boto3_session = boto3.Session(profile_name=profile_name, region_name=region_name)
+
 region_name = boto3_session.region_name
 iam_client = boto3_session.client('iam')
-account_number = boto3.client('sts').get_caller_identity().get('Account')
-identity = boto3.client('sts').get_caller_identity()['Arn']
+account_number = boto3_session.client('sts').get_caller_identity().get('Account')
+identity = boto3_session.client('sts').get_caller_identity()['Arn']
 
 suffix = None
 encryption_policy_name = None
@@ -304,24 +311,47 @@ def create_policies_in_oss(vector_store_name, aoss_client, bedrock_kb_execution_
     return encryption_policy, network_policy, access_policy
 
 
-def delete_iam_role_and_policies():
-    fm_policy_arn = f"arn:aws:iam::{account_number}:policy/{fm_policy_name}"
+def delete_iam_role_and_policies(account_number:str, suffix_p: str | None = None):
+    set_names(suffix_p)
+    assert s3_policy_name, "s3_policy_name"
     s3_policy_arn = f"arn:aws:iam::{account_number}:policy/{s3_policy_name}"
+    print(f"{s3_policy_arn=}")
+    import contextlib
+
+    assert bedrock_execution_role_name, "bedrock_execution_role_name"
+    with contextlib.suppress(Exception):
+        iam_client.detach_role_policy(
+            RoleName=bedrock_execution_role_name,
+            PolicyArn=s3_policy_arn
+        )
+    assert fm_policy_name, "fm_policy_name"
+    fm_policy_arn = f"arn:aws:iam::{account_number}:policy/{fm_policy_name}"
+    print(f"{fm_policy_arn=}")
+    with contextlib.suppress(Exception):
+        iam_client.detach_role_policy(
+            RoleName=bedrock_execution_role_name,
+            PolicyArn=fm_policy_arn
+        )
+
+    assert oss_policy_name, "oss_policy_name"
     oss_policy_arn = f"arn:aws:iam::{account_number}:policy/{oss_policy_name}"
-    iam_client.detach_role_policy(
-        RoleName=bedrock_execution_role_name,
-        PolicyArn=s3_policy_arn
-    )
-    iam_client.detach_role_policy(
-        RoleName=bedrock_execution_role_name,
-        PolicyArn=fm_policy_arn
-    )
-    iam_client.detach_role_policy(
-        RoleName=bedrock_execution_role_name,
-        PolicyArn=oss_policy_arn
-    )
-    iam_client.delete_role(RoleName=bedrock_execution_role_name)
-    iam_client.delete_policy(PolicyArn=s3_policy_arn)
-    iam_client.delete_policy(PolicyArn=fm_policy_arn)
-    iam_client.delete_policy(PolicyArn=oss_policy_arn)
+    print(f"{oss_policy_arn=}")
+    with contextlib.suppress(Exception):
+        iam_client.detach_role_policy(
+            RoleName=bedrock_execution_role_name,
+            PolicyArn=oss_policy_arn
+        )
+    
+    with contextlib.suppress(Exception):
+        print(f"{bedrock_execution_role_name=}")
+        iam_client.delete_role(RoleName=bedrock_execution_role_name)
+    with contextlib.suppress(Exception):
+        print(f"{s3_policy_arn=}")
+        iam_client.delete_policy(PolicyArn=s3_policy_arn)
+    with contextlib.suppress(Exception):
+        print(f"{fm_policy_arn=}")
+        iam_client.delete_policy(PolicyArn=fm_policy_arn)
+    with contextlib.suppress(Exception):
+        print(f"{oss_policy_arn=}")
+        iam_client.delete_policy(PolicyArn=oss_policy_arn)
     return 0
